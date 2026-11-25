@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ApiError, sendChatMessage } from "../services/chatApi";
-import type { ChatSession, UIMessage } from "../types/chat";
+import type { AskResult, ChatSession, UIMessage } from "../types/chat";
 
 /** RFC 4122 v4 id. crypto.randomUUID needs a secure context, so fall back to getRandomValues. */
 export function createId(): string {
@@ -21,7 +21,19 @@ function newSession(): ChatSession {
 
 function titleFrom(text: string): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
-  return oneLine.length > 42 ? `${oneLine.slice(0, 42)}…` : oneLine || "New chat";
+  return oneLine.length > 40 ? `${oneLine.slice(0, 40)}…` : oneLine || "New chat";
+}
+
+/**
+ * Failover demo without any UI: open the app with `?simulate=key_1=429` (or
+ * `*=429`, `key_1=500`, …) and every message carries that X-Simulate-Failure header.
+ */
+function simulationFromUrl(): string {
+  try {
+    return (new URLSearchParams(window.location.search).get("simulate") ?? "").trim();
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -35,7 +47,7 @@ export function useChat() {
     return { sessions: [first], activeId: first.id };
   });
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
-  const [simulateFailure, setSimulateFailure] = useState("");
+  const [simulateFailure, setSimulateFailure] = useState(simulationFromUrl);
   const inFlight = useRef(false);
 
   const activeSession = useMemo(
@@ -48,13 +60,13 @@ export function useChat() {
   }, []);
 
   const send = useCallback(
-    (session: ChatSession, text: string) => {
+    (session: ChatSession, text: string, via?: "voice"): Promise<AskResult> | null => {
       const message = text.trim();
-      if (!message || inFlight.current) return false;
+      if (!message || inFlight.current) return null;
       inFlight.current = true;
 
       const simulated = simulateFailure || undefined;
-      const userMsg: UIMessage = { id: createId(), role: "user", content: message, createdAt: Date.now(), status: "sent", simulated };
+      const userMsg: UIMessage = { id: createId(), role: "user", content: message, createdAt: Date.now(), status: "sent", simulated, via };
       updateSession(session.id, (s) => ({
         ...s,
         title: s.messages.length === 0 ? titleFrom(message) : s.title,
@@ -63,39 +75,36 @@ export function useChat() {
       setPendingSessionId(session.id);
 
       const systemPrompt = session.systemPrompt.trim();
-      sendChatMessage(
+      return sendChatMessage(
         { session_id: session.id, message, ...(systemPrompt ? { system_prompt: systemPrompt } : {}) },
         { simulateFailure: simulated },
       )
         .then((res) => {
-          const reply: UIMessage = {
-            id: createId(),
-            role: "assistant",
-            content: res.reply,
-            metadata: res.metadata,
-            createdAt: Date.now(),
-            simulated,
-          };
+          const reply: UIMessage = { id: createId(), role: "assistant", content: res.reply, metadata: res.metadata, createdAt: Date.now() };
           updateSession(session.id, (s) => ({ ...s, messages: [...s.messages, reply] }));
+          return { ok: true, message: reply } as const;
         })
         .catch((err: unknown) => {
-          const text = err instanceof ApiError ? err.message : "Something went wrong while sending your message. Please try again.";
-          const errorMsg: UIMessage = { id: createId(), role: "error", content: text, createdAt: Date.now(), retryOf: userMsg.id };
+          const errText = err instanceof ApiError ? err.message : "Something went wrong while sending your message. Please try again.";
+          const errorMsg: UIMessage = { id: createId(), role: "error", content: errText, createdAt: Date.now(), retryOf: userMsg.id };
           updateSession(session.id, (s) => ({
             ...s,
             messages: [...s.messages.map((m) => (m.id === userMsg.id ? { ...m, status: "failed" as const } : m)), errorMsg],
           }));
+          return { ok: false, error: errText } as const;
         })
         .finally(() => {
           inFlight.current = false;
           setPendingSessionId(null);
         });
-      return true;
     },
     [simulateFailure, updateSession],
   );
 
-  const sendMessage = useCallback((text: string) => send(activeSession, text), [send, activeSession]);
+  const sendMessage = useCallback((text: string) => send(activeSession, text) !== null, [send, activeSession]);
+
+  /** Voice Mode: same request path (session memory, system prompt, simulation), but awaitable. */
+  const ask = useCallback((text: string) => send(activeSession, text, "voice"), [send, activeSession]);
 
   /** Re-send a failed message: drop the failed attempt + its error, then send again. */
   const retry = useCallback(
@@ -137,8 +146,9 @@ export function useChat() {
     isSending: pendingSessionId !== null,
     pendingSessionId,
     simulateFailure,
-    setSimulateFailure,
+    clearSimulation: () => setSimulateFailure(""),
     sendMessage,
+    ask,
     retry,
     newChat,
     selectSession,

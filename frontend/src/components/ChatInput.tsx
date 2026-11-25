@@ -1,15 +1,23 @@
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, AudioLines, FlaskConical, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { SystemPromptEditor } from "./SystemPromptEditor";
 
 const MAX_CHARS = 4000;
 
 interface Props {
   onSend: (text: string) => boolean;
   busy: boolean;
-  autoFocusKey?: string;
+  focusKey?: string;
+  systemPrompt: string;
+  onSystemPromptChange: (value: string) => void;
+  simulateFailure: string;
+  onClearSimulation: () => void;
+  voiceModeSupported: boolean;
+  onVoiceMode: () => void;
 }
 
-export function ChatInput({ onSend, busy, autoFocusKey }: Props) {
+export function ChatInput(props: Props) {
+  const { onSend, busy, focusKey } = props;
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
   const length = value.trim().length;
@@ -24,8 +32,8 @@ export function ChatInput({ onSend, busy, autoFocusKey }: Props) {
   }, [value]);
 
   useEffect(() => {
-    ref.current?.focus();
-  }, [autoFocusKey, busy]);
+    if (!busy) ref.current?.focus();
+  }, [focusKey, busy]);
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
@@ -44,8 +52,10 @@ export function ChatInput({ onSend, busy, autoFocusKey }: Props) {
   return (
     <form
       onSubmit={submit}
-      className="rounded-2xl border border-slate-200 bg-white shadow-sm transition focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-500/10 dark:border-ink-700 dark:bg-ink-900"
+      className="overflow-hidden rounded-[26px] border border-line bg-surface shadow-[0_4px_20px_-8px_rgb(0_0_0/0.12)] transition focus-within:border-line-strong dark:border-transparent dark:shadow-none"
     >
+      <SystemPromptEditor value={props.systemPrompt} onChange={props.onSystemPromptChange} />
+
       <textarea
         ref={ref}
         data-testid="chat-input"
@@ -53,31 +63,49 @@ export function ChatInput({ onSend, busy, autoFocusKey }: Props) {
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKeyDown}
         rows={1}
-        placeholder={busy ? "Waiting for the reply…" : "Message Lyftr AI…"}
+        placeholder="Ask anything"
         aria-label="Message"
-        className="scroll-thin block max-h-[200px] w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
+        className="scroll-thin block max-h-[200px] min-h-12 w-full resize-none bg-transparent px-5 pt-3.5 text-[16px] leading-6 outline-none placeholder:text-faint focus-visible:outline-none"
       />
-      <div className="flex items-center justify-between gap-3 px-3 pb-2.5 pt-1">
-        <span className="hidden text-[11px] text-slate-400 sm:inline">
-          <kbd className="font-sans">Enter</kbd> to send · <kbd className="font-sans">Shift + Enter</kbd> for a new line
-        </span>
-        <div className="ml-auto flex items-center gap-3">
-          {length > MAX_CHARS * 0.8 && (
-            <span className={`text-[11px] tabular-nums ${length > MAX_CHARS ? "font-semibold text-rose-500" : "text-slate-400"}`}>
-              {length}/{MAX_CHARS}
-            </span>
-          )}
+
+      <div className="flex items-center gap-2 px-3 pb-3 pt-1">
+        {props.simulateFailure && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 py-1 pl-2.5 pr-1 text-xs font-medium text-amber-800 dark:bg-amber-400/15 dark:text-amber-300">
+            <FlaskConical size={13} /> X-Simulate-Failure: {props.simulateFailure}
+            <button type="button" onClick={props.onClearSimulation} className="rounded-full p-0.5 hover:bg-amber-200/70 dark:hover:bg-amber-400/20" aria-label="Turn off failure simulation">
+              <X size={13} />
+            </button>
+          </span>
+        )}
+        <div className="flex-1" />
+        {length > MAX_CHARS * 0.8 && (
+          <span className={`text-xs tabular-nums ${length > MAX_CHARS ? "font-semibold text-rose-500" : "text-faint"}`}>
+            {length}/{MAX_CHARS}
+          </span>
+        )}
+        {props.voiceModeSupported && (
           <button
-            type="submit"
-            data-testid="send-button"
-            disabled={!canSend}
-            aria-label="Send message"
-            title="Send message"
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-ink-700 dark:disabled:text-slate-500"
+            type="button"
+            onClick={props.onVoiceMode}
+            disabled={busy}
+            data-testid="voice-mode-button"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-ink transition hover:bg-surface-3 disabled:opacity-40 dark:bg-surface-3 dark:hover:bg-line-strong"
+            aria-label="Start Voice Mode"
+            title="Voice Mode"
           >
-            {busy ? <Loader2 size={17} className="animate-spin" /> : <ArrowUp size={18} />}
+            <AudioLines size={18} />
           </button>
-        </div>
+        )}
+        <button
+          type="submit"
+          data-testid="send-button"
+          disabled={!canSend}
+          aria-label="Send message"
+          title="Send message"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-ink text-canvas transition hover:opacity-80 active:scale-95 disabled:cursor-not-allowed disabled:bg-surface-3 disabled:text-faint"
+        >
+          {busy ? <Square size={13} className="fill-current" /> : <ArrowUp size={19} strokeWidth={2.4} />}
+        </button>
       </div>
     </form>
   );

@@ -28,6 +28,8 @@ export interface HealthResponse {
   status: "ok" | "degraded";
   keys_configured: number;
   cache_enabled: boolean;
+  /** Extra field: the LiteLLM model the backend is configured with. */
+  model?: string;
   detail?: string;
 }
 
@@ -46,7 +48,12 @@ export interface UIMessage {
   retryOf?: string;
   /** The X-Simulate-Failure header that was sent with this request, if any. */
   simulated?: string;
+  /** User messages spoken in Voice Mode. */
+  via?: "voice";
 }
+
+/** Outcome of one awaited chat turn (Voice Mode). */
+export type AskResult = { ok: true; message: UIMessage } | { ok: false; error: string };
 
 export interface ChatSession {
   id: string;

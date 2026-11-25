@@ -1,32 +1,39 @@
-import { Settings2 } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 interface Props {
   value: string;
   onChange: (value: string) => void;
-  disabled?: boolean;
 }
 
 /**
- * Optional per-session system prompt. When non-empty it is sent as `system_prompt`
- * with each message; the backend stores it as this session's override.
+ * Optional per-session system prompt — one quiet line at the top of the composer.
+ * When non-empty it is sent as `system_prompt`; the backend keeps it as this
+ * session's override.
  */
-export function SystemPromptEditor({ value, onChange, disabled }: Props) {
+export function SystemPromptEditor({ value, onChange }: Props) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
+  }, [value]);
+
   return (
-    <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2 dark:border-ink-700 dark:bg-ink-900/70">
-      <label htmlFor="system-prompt" className="mt-1 flex shrink-0 items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-        <Settings2 size={14} />
-        <span className="hidden sm:inline">System prompt</span>
-      </label>
+    <div className="flex items-start gap-2 border-b border-line px-4 py-2" title="System prompt for this chat (optional)">
+      <SlidersHorizontal size={14} className="mt-[5px] shrink-0 text-faint" aria-hidden />
       <textarea
-        id="system-prompt"
+        ref={ref}
         data-testid="system-prompt-input"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
         rows={1}
         maxLength={8000}
-        placeholder="Optional — e.g. “Answer in simple English.” Applies to this chat from the next message."
-        className="scroll-thin max-h-28 min-h-[28px] flex-1 resize-y bg-transparent py-0.5 text-sm leading-6 text-slate-700 outline-none placeholder:text-slate-400 disabled:opacity-60 dark:text-slate-200 dark:placeholder:text-slate-500"
+        aria-label="System prompt (optional)"
+        placeholder="System prompt (optional)"
+        className="scroll-thin block min-h-6 w-full resize-none bg-transparent text-[13px] leading-6 text-muted outline-none placeholder:text-faint focus:text-ink focus-visible:outline-none"
       />
     </div>
   );

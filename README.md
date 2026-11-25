@@ -23,10 +23,12 @@ lyftr-ai/
 
 | Tier | URL |
 |---|---|
-| Frontend | _Pending deployment_ |
-| Backend | _Pending deployment_ (health: `<backend-url>/health`) |
+| Frontend | https://lyftr-ai-12sohamverma.onrender.com |
+| Backend | https://lyftr-ai-12sohamverma-api.onrender.com (health: https://lyftr-ai-12sohamverma-api.onrender.com/health) |
 
-These are filled in once the deployment below has been run and verified.
+Both run on Render's free tier. The backend sleeps after 15 minutes idle, so the **first request after a pause can take about a minute** while it wakes up. Open the health URL first if the UI shows "Offline".
+
+Verified against the live backend: health 200; live call then the same first message in a new session answered from `LLM_CACHE` (3 ms, identical reply and tokens, `key_id: null`); `X-Simulate-Failure: key_1=429` and `key_1=500` answered by `key_2` with `fallback_attempts: 1`; `*=429` returned 503 `{"detail":"all providers unavailable"}` with nothing stored (history 404); empty message returned 422.
 
 ### Deploying (Render Blueprint)
 
@@ -46,7 +48,7 @@ The repository contains a [`render.yaml`](render.yaml) that creates both service
 
    `ENABLE_FAILURE_SIMULATION=true`, `DATABASE_URL=sqlite:////data/app.db` and the model are already set in the Blueprint.
 4. If Render assigns different URLs than expected, update the two variables and redeploy. The frontend must be **rebuilt**, because Vite bakes `VITE_API_BASE_URL` into the bundle.
-5. Verify: `curl <backend-url>/health` → `{"status":"ok","keys_configured":2,"cache_enabled":true}`, then run the commands from [section 4](#4-verification-how-to-see-failover-cache-hits-and-per-message-token-usage) against the backend URL.
+5. Verify: `curl <backend-url>/health` → `{"status":"ok","keys_configured":2,"cache_enabled":true,"model":"gemini/gemini-3.5-flash-lite"}`, then run the commands from [section 4](#4-verification-how-to-see-failover-cache-hits-and-per-message-token-usage) against the backend URL.
 
 **Hosting plan.** The deployed backend runs on Render's **free** instance type, which has two limitations:
 
@@ -266,7 +268,8 @@ Set `B=http://localhost:8000` (or the deployed backend URL). Example outputs bel
 
 ```bash
 curl -s $B/health
-# {"status":"ok","keys_configured":2,"cache_enabled":true}
+# {"status":"ok","keys_configured":2,"cache_enabled":true,"model":"gemini/gemini-3.5-flash-lite"}
+# ("model" is an extra field — allowed by the contract — so the UI can show the active model up front.)
 ```
 
 ### Cache hit (same first message, new session)
@@ -312,7 +315,7 @@ curl -s $B/sessions/all-fail-test/messages
 # {"detail":"session not found"}     <- the failed request was not added to history
 ```
 
-`key_1=429,key_2=500` also returns 503. The backend logs show each step, for example `key_1 failed with RateLimitError (status=429) [simulated]; trying next key`. In the UI, the **Failover demo** selector in the sidebar adds the same header to the next messages.
+`key_1=429,key_2=500` also returns 503. The backend logs show each step, for example `key_1 failed with RateLimitError (status=429) [simulated]; trying next key`. To show it in the UI, open the frontend with `?simulate=key_1%3D429` (or `?simulate=*%3D429`): every message then carries that header, and the reply metadata shows `key_2` with fallback 1 (or the readable 503 error).
 
 Real (non-simulated) provider failures take the same path. During development the backend was also run against a local fake provider that returned genuine HTTP 429 / quota / 500 responses for `key_1`. In each case `key_2` answered with `fallback_attempts: 1`, and with both keys failing the API returned 503.
 
@@ -360,13 +363,13 @@ A message over 4000 characters after trimming is also a 422.
 - Two equal-length first messages in two new sessions report about the same `input_tokens`.
 - A cache hit reports the usage stored with the cached response.
 
-In the UI every assistant reply shows these values as compact badges:
-- source: green ⚡ `LIVE_INFERENCE` or amber 🗄 `LLM_CACHE`
+In the UI every assistant reply shows these values in one quiet line under the answer:
+- source: green ⚡ `LIVE_INFERENCE` or violet 🗄 `LLM_CACHE`
 - model
 - latency (`812 ms`)
 - `in` / `out` tokens
 - the answering key
-- the fallback count, highlighted when a failover happened
+- the fallback count, shown only when a failover happened
 
 ### Automated tests
 
@@ -398,17 +401,24 @@ In the UI every assistant reply shows these values as compact badges:
 
 ## 6. Bonus features (if any): what you added beyond the requirements and why
 
-- **Failover demo selector in the UI.** It sends `X-Simulate-Failure` (`key_1=429`, `key_1=500`, `key_1=503`, `*=429`) with the next messages, so failover can be shown in the browser without curl. That makes the demo video and manual review easier.
-- **Visible key and fallback metadata.** Each reply also shows the answering key and the fallback count, and highlights a failover ("Failed over to key_2 after 1 failed key"). That makes resilience visible, not just logged.
-- **Session panel.** Shows the current session id (copyable), a link that opens `GET /sessions/{id}/messages`, and counters for replies, cache hits and failovers. It makes the history endpoint easy to verify.
-- **Connection status from `/health`.** Online, degraded or offline, with the key count and cache state. Configuration problems show up before anyone sends a message.
-- **Retry on errors.** Failed messages are marked "Not delivered" with a Retry button, so errors are recoverable without retyping.
-- **Markdown rendering with code blocks, and copy-to-clipboard.** LLM answers are usually Markdown.
-- **Light/dark theme and a responsive layout.** The sidebar becomes a drawer on phones.
-- **Persistent disk cache.** The LiteLLM cache lives on the `/data` volume, so cache hits survive restarts and redeploys.
+The interface is deliberately minimal and chat-first, in the style of ChatGPT/Gemini: a sidebar with chats, a centred conversation and one composer. Everything the assignment asks for is on screen: multi-turn chat, per-reply metadata, the optional system prompt, and readable errors. Extras were kept only where they help use or verify the app.
+
+- **Voice Mode (spoken conversation).** The waveform button in the composer opens a hands-free mode with an animated orb and a live waveform driven by the real microphone level.
+  - **How a turn works:** you speak and see a live transcript. After about 1.3 s of silence the turn is sent through the **same `POST /chat` request path** as typed messages, so session memory, the system prompt and the cache all apply. The reply is read aloud with the browser's speech synthesis, then it listens again.
+  - **Controls:** mute, interrupt (Space) and end call (Esc).
+  - **In the chat:** voice turns appear in the normal chat with their full metadata, tagged "Voice".
+  - **Limits:** it uses the Web Speech API, so it needs Chrome, Edge or Safari. Interrupting stops the spoken answer, but a request that already reached the server still completes and is stored.
+- **Failover demo from the browser, with no extra UI.** Open the frontend with `?simulate=key_1=429` (URL-encoded: `?simulate=key_1%3D429`), or `?simulate=*%3D429`. Every message then carries that `X-Simulate-Failure` header, a small removable chip shows it is active, and the reply metadata shows `key_2` with a highlighted fallback count, or the readable 503 error.
+- **Key and fallback in the metadata line.** Next to the required source, model, latency and token counts, each reply shows the key that answered, and the fallback count when a failover happened.
+- **Chats within the tab.** "New chat" starts another session without reloading, and each chat's ⋯ menu copies its session id or opens `GET /sessions/{id}/messages`. A reload still starts a fresh session, as required.
+- **Connection line from `/health`.** The bottom of the sidebar shows connected, degraded or offline, plus the key count and cache state, so configuration problems are visible at a glance.
+- **Retry on errors.** A failed message is marked "Not delivered" and gets a Retry button.
+- **Markdown rendering, copy button, light/dark theme, mobile drawer, Alt + N for a new chat.**
+- **Persistent disk cache.** Locally, the LiteLLM cache lives on the `/data` volume, so cache hits survive restarts.
 - **Robustness beyond the spec.**
   - Revoked or invalid keys (401/403) and timeouts also trigger failover.
   - Pools of three or more keys are supported.
-  - Per-session request serialisation.
+  - Requests within a session are processed one at a time.
   - Unexpected errors still return JSON with CORS headers.
-- **`make test`** runs the whole backend suite in a throwaway container, so reviewers don't need a local Python setup.
+  - A degraded `/health` logs its reason once.
+- **`make test`.** Runs the backend suite in a throwaway container, so reviewers don't need a local Python setup.

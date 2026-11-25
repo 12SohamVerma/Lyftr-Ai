@@ -2,9 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Lyftr AI — multi-turn LLM chat with key failover and response caching." />
-    <meta name="theme-color" content="#0b1020" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Lyftr AI — multi-turn LLM chat with key failover, response caching and session memory." />
+    <meta name="theme-color" content="#ffffff" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -14,12 +14,10 @@
     />
     <title>Lyftr AI</title>
     <script>
-      // Apply the saved/system theme before first paint to avoid a flash.
+      // Apply the saved theme before first paint (light is the default design).
       (function () {
         try {
-          var saved = localStorage.getItem("lyftr-theme");
-          var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
-          if (dark) document.documentElement.classList.add("dark");
+          if (localStorage.getItem("lyftr-theme") === "dark") document.documentElement.classList.add("dark");
         } catch (e) {}
       })();
     </script>

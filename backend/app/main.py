@@ -105,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status="ok" if not problems else "degraded",
             keys_configured=keys,
             cache_enabled=cache_on,
+            model=settings.llm_model,
             detail="; ".join(problems) or None,
         )
         # Log only when the health state changes, so platform health checks

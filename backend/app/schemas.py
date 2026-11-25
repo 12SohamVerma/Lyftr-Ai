@@ -57,6 +57,8 @@ class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     keys_configured: int
     cache_enabled: bool
+    # Extra field (allowed by the contract): lets the UI show the active model up front.
+    model: str | None = None
     detail: str | None = None
 
 

@@ -8,7 +8,15 @@ from app.config import parse_key_pool, sqlite_path_from_url
 def test_health_ok_with_two_keys_db_and_cache(client):
     res = client.get("/health")
     assert res.status_code == 200
-    assert res.json() == {"status": "ok", "keys_configured": 2, "cache_enabled": True}
+    body = res.json()
+    # Contract fields (exact), plus the allowed extra "model" field for the UI.
+    assert {k: body[k] for k in ("status", "keys_configured", "cache_enabled")} == {
+        "status": "ok",
+        "keys_configured": 2,
+        "cache_enabled": True,
+    }
+    assert body["model"] == "openai/gpt-4o-mini"
+    assert "detail" not in body
 
 
 def test_health_counts_every_configured_key(make_client):
