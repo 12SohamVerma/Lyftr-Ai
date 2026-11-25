@@ -34,21 +34,26 @@ The repository contains a [`render.yaml`](render.yaml) that creates both service
 
 1. Push the repository to GitHub (public).
 2. In Render: **New → Blueprint** → select the repository. Render creates
-   - `lyftr-ai-backend`: a Docker web service with a **1 GB persistent disk mounted at `/data`** (SQLite file + LiteLLM disk cache). Persistent disks require a paid instance type, so the Blueprint uses the `starter` plan.
-   - `lyftr-ai-frontend`: a static site built with `npm ci && npm run build`.
+   - `lyftr-ai-12sohamverma-api`: the backend, built from `backend/Dockerfile` and run as a Docker web service.
+   - `lyftr-ai-12sohamverma`: the frontend, a static site built with `npm ci && npm run build`.
 3. When prompted, enter the secret / environment-specific values:
 
    | Service | Variable | Value |
    |---|---|---|
    | backend | `LLM_API_KEYS` | `key_one,key_two` (two or more real keys) |
-   | backend | `ALLOWED_ORIGINS` | the frontend URL, e.g. `https://lyftr-ai-frontend.onrender.com` |
-   | frontend | `VITE_API_BASE_URL` | the backend URL, e.g. `https://lyftr-ai-backend.onrender.com` |
+   | backend | `ALLOWED_ORIGINS` | the frontend URL, e.g. `https://lyftr-ai-12sohamverma.onrender.com` |
+   | frontend | `VITE_API_BASE_URL` | the backend URL, e.g. `https://lyftr-ai-12sohamverma-api.onrender.com` |
 
    `ENABLE_FAILURE_SIMULATION=true`, `DATABASE_URL=sqlite:////data/app.db` and the model are already set in the Blueprint.
-4. If you only learn a URL after the first deploy, set the variable and redeploy that service (the frontend must be **rebuilt** because Vite bakes `VITE_API_BASE_URL` into the bundle).
+4. If Render assigns different URLs than expected, update the two variables and redeploy. The frontend must be **rebuilt**, because Vite bakes `VITE_API_BASE_URL` into the bundle.
 5. Verify: `curl <backend-url>/health` → `{"status":"ok","keys_configured":2,"cache_enabled":true}`, then run the commands from [section 4](#4-verification-how-to-see-failover-cache-hits-and-per-message-token-usage) against the backend URL.
 
-Any Docker host with a persistent volume works the same way (Railway: add a volume mounted at `/data`; Fly.io: a `[mounts]` volume at `/data`). On a host without a persistent disk the app still runs, but history and cache are lost whenever the instance restarts.
+**Hosting plan.** The deployed backend runs on Render's **free** instance type, which has two limitations:
+
+- **No persistent disk.** The SQLite file and the LiteLLM disk cache under `/data` are kept while the instance runs, but are reset when it restarts or is redeployed.
+- **Sleeps after 15 minutes idle.** The first request after that waits roughly a minute for a cold start.
+
+Within a running instance, history, multi-turn memory, caching and failover all behave as documented. For durable storage, switch the backend to `plan: starter` and uncomment the `disk:` block in `render.yaml`, which mounts a persistent disk at `/data`; no code changes are needed. Locally, Docker Compose always uses the persistent named volume.
 
 ---
 
