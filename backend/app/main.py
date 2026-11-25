@@ -87,6 +87,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_age=600,
     )
 
+    last_health_detail: dict[str, str | None] = {"value": None}
+
     @app.get("/health", response_model=HealthResponse, response_model_exclude_none=True)
     async def health() -> Any:
         db_ok = await asyncio.to_thread(db.ping)
@@ -105,6 +107,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cache_enabled=cache_on,
             detail="; ".join(problems) or None,
         )
+        # Log only when the health state changes, so platform health checks
+        # polling every few seconds don't flood the logs.
+        if body.detail != last_health_detail["value"]:
+            last_health_detail["value"] = body.detail
+            if problems:
+                logger.error("Health check DEGRADED: %s", body.detail)
+            else:
+                logger.info("Health check OK: %d keys, cache enabled", keys)
         if problems:
             return JSONResponse(body.model_dump(), status_code=503)
         return body.model_dump(exclude_none=True)
