@@ -16,6 +16,7 @@ def test_health_ok_with_two_keys_db_and_cache(client):
         "cache_enabled": True,
     }
     assert body["model"] == "openai/gpt-4o-mini"
+    assert body["default_system_prompt"] == "You are a test assistant."
     assert "detail" not in body
 
 

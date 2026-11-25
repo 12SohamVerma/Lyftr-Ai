@@ -1,4 +1,5 @@
 import { Menu, Moon, SquarePen, Sun } from "lucide-react";
+import type { ReactNode } from "react";
 
 interface Props {
   model: string | null;
@@ -6,9 +7,11 @@ interface Props {
   onToggleTheme: () => void;
   onOpenSidebar: () => void;
   onNewChat: () => void;
+  /** Personal-memory status pill + panel. */
+  memorySlot?: ReactNode;
 }
 
-export function TopBar({ model, dark, onToggleTheme, onOpenSidebar, onNewChat }: Props) {
+export function TopBar({ model, dark, onToggleTheme, onOpenSidebar, onNewChat, memorySlot }: Props) {
   const iconBtn = "flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink";
   return (
     <header className="flex h-14 shrink-0 items-center gap-1 px-2 sm:px-3">
@@ -24,6 +27,7 @@ export function TopBar({ model, dark, onToggleTheme, onOpenSidebar, onNewChat }:
         )}
       </div>
       <div className="flex-1" />
+      {memorySlot}
       <button type="button" onClick={onNewChat} className={`${iconBtn} lg:hidden`} aria-label="New chat">
         <SquarePen size={18} />
       </button>

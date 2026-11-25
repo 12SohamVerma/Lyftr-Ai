@@ -48,14 +48,28 @@ The repository contains a [`render.yaml`](render.yaml) that creates both service
 
    `ENABLE_FAILURE_SIMULATION=true`, `DATABASE_URL=sqlite:////data/app.db` and the model are already set in the Blueprint.
 4. If Render assigns different URLs than expected, update the two variables and redeploy. The frontend must be **rebuilt**, because Vite bakes `VITE_API_BASE_URL` into the bundle.
-5. Verify: `curl <backend-url>/health` → `{"status":"ok","keys_configured":2,"cache_enabled":true,"model":"gemini/gemini-3.5-flash-lite"}`, then run the commands from [section 4](#4-verification-how-to-see-failover-cache-hits-and-per-message-token-usage) against the backend URL.
+5. Verify: `curl <backend-url>/health` → `{"status":"ok","keys_configured":2,"cache_enabled":true,"model":"gemini/gemini-3.5-flash-lite","default_system_prompt":"…"}`, then run the commands from [section 4](#4-verification-how-to-see-failover-cache-hits-and-per-message-token-usage) against the backend URL.
 
 **Hosting plan.** The deployed backend runs on Render's **free** instance type, which has two limitations:
 
 - **No persistent disk.** The SQLite file and the LiteLLM disk cache under `/data` are kept while the instance runs, but are reset when it restarts or is redeployed.
 - **Sleeps after 15 minutes idle.** The first request after that waits roughly a minute for a cold start.
 
-Within a running instance, history, multi-turn memory, caching and failover all behave as documented. For durable storage, switch the backend to `plan: starter` and uncomment the `disk:` block in `render.yaml`, which mounts a persistent disk at `/data`; no code changes are needed. Locally, Docker Compose always uses the persistent named volume.
+Within a running instance, history, multi-turn memory, caching and failover all behave as documented. **On this free deployment, SQLite history and the LiteLLM disk cache do *not* survive a restart, redeploy or wake-up.** Locally, Docker Compose always uses the persistent named volume, so they do survive there. (Personal profile memory is unaffected: it lives in the user's browser, not on the server.)
+
+### Durable storage in production (documented options, not deployed)
+The code needs no changes: anything that keeps `/data` on a persistent disk works.
+
+1. **Render paid instance + disk:** in `render.yaml` set `plan: starter` and uncomment the `disk:` block (`mountPath: /data`). The entrypoint already fixes the ownership of a root-owned disk and then drops to the non-root `app` user.
+2. **AWS EC2 or Lightsail VM with Docker Compose (same as local):**
+   1. Create an Ubuntu instance (2 GB RAM recommended for building the images; add swap on 1 GB) and open ports 80/443.
+   2. Install Docker + the Compose plugin, `git clone` this repo, create `.env` from `.env.example` with your keys.
+   3. Set `ALLOWED_ORIGINS=https://<your-domain>` and `VITE_API_BASE_URL=https://<your-domain>/api` (or a separate API host).
+   4. Run `docker compose up --build -d`. The named volume `sqlite_data` lives on the instance's EBS disk, so history and cache survive restarts and redeploys.
+   5. Put a TLS reverse proxy (e.g. Caddy) in front for HTTPS. **HTTPS is required** for Voice Mode's microphone, and for the browser's `crypto.randomUUID`.
+   6. Back up the volume (EBS snapshots) if the history matters.
+
+   SQLite needs **one** backend instance on a local disk. Avoid putting it on network storage, and avoid scaling to several instances without moving to Postgres.
 
 ---
 
@@ -121,6 +135,11 @@ cd frontend
 npm ci
 npm run dev                          # http://localhost:3000, talks to VITE_API_BASE_URL (default http://localhost:8000)
 npm run build                        # type-check + production bundle in dist/
+npm test                             # Vitest unit tests (profile-memory logic), no server needed
+
+# End-to-end browser tests against a RUNNING stack (real model calls, uses your keys):
+npx playwright install chromium      # once
+E2E_BASE_URL=http://localhost:3000 E2E_API_URL=http://localhost:8000 npm run test:e2e
 ```
 
 ### Configuration
@@ -269,7 +288,8 @@ Set `B=http://localhost:8000` (or the deployed backend URL). Example outputs bel
 ```bash
 curl -s $B/health
 # {"status":"ok","keys_configured":2,"cache_enabled":true,"model":"gemini/gemini-3.5-flash-lite"}
-# ("model" is an extra field — allowed by the contract — so the UI can show the active model up front.)
+# "model" and "default_system_prompt" are extra fields (allowed by the contract): the UI shows the model,
+# and appends saved profile memory to the real default prompt instead of a hard-coded copy.
 ```
 
 ### Cache hit (same first message, new session)
@@ -371,9 +391,22 @@ In the UI every assistant reply shows these values in one quiet line under the a
 - the answering key
 - the fallback count, shown only when a failover happened
 
+### Personal profile memory (bonus)
+1. In the UI type "My name is Soham". A banner asks "Remember Soham as your name in future chats?". Click **Save** and a confirmation toast appears; the top-bar pill now shows **Soham**.
+2. Click **New Chat** (or reload, or restart the browser) and ask "What is my name?". The answer uses Soham, while the new chat's history (`GET /sessions/<new id>/messages`) contains only that chat.
+3. Open the pill to edit the name, switch memory off, or **Delete memory**. In DevTools → Application → Local Storage, the key `lyftr.memory.v1` disappears after deleting.
+
 ### Automated tests
 
-`make test`, or `cd backend && python -m pytest -v`, runs **80 tests**, mocked at the provider boundary through LiteLLM's own `mock_response`, so LiteLLM's real cache and exception types are exercised without network calls or API credits. They cover:
+Three suites. A requirement-by-requirement audit with PASS/PARTIAL/FAIL is in [`docs/ASSIGNMENT_AUDIT.md`](docs/ASSIGNMENT_AUDIT.md).
+
+| Suite | Command | Count |
+|---|---|---|
+| Backend (pytest) | `make test` or `cd backend && python -m pytest -v` | 85 |
+| Frontend unit (Vitest) | `cd frontend && npm test` | 38 |
+| End-to-end (Playwright, needs `make up` + keys) | `cd frontend && npm run test:e2e` | 15 |
+
+`make test` runs the **85 backend tests**, mocked at the provider boundary through LiteLLM's own `mock_response`, so LiteLLM's real cache and exception types are exercised without network calls or API credits. They cover:
 
 - **Health:** key count, placeholders, degraded state.
 - **Validation:** every 422 case.
@@ -403,6 +436,14 @@ In the UI every assistant reply shows these values in one quiet line under the a
 
 The interface is deliberately minimal and chat-first, in the style of ChatGPT/Gemini: a sidebar with chats, a centred conversation and one composer. Everything the assignment asks for is on screen: multi-turn chat, per-reply metadata, the optional system prompt, and readable errors. Extras were kept only where they help use or verify the app.
 
+- **Personal profile memory (opt-in, browser-local).** Sessions stay separate, as the assignment requires, but a user can let Lyftr AI remember **their name** across new chats, refreshes and browser restarts.
+  - **Detection:** when you write an explicit introduction ("My name is Soham", "Call me Soham", "Mera naam Soham hai"), a banner asks whether to remember it. It's saved only when you click **Save**, or automatically if you turned on **Remember Me**. Questions, negations and hypotheticals are ignored.
+  - **Storage:** only the name is stored (never conversations or model output), in `localStorage` under the versioned key `lyftr.memory.v1`. It is sanitised to letters, spaces, `'`, `-` and `.`, so stored memory can't inject instructions.
+  - **How it reaches the model:** on each request it is appended as a short "Saved user profile" block to the **existing `system_prompt` field**. The base is your custom session prompt if you set one (per the contract, that overrides the default), otherwise the backend's real default, read from `/health`'s `default_system_prompt`. Neither is overwritten.
+  - **Effect on the contract:** with nothing saved, no `system_prompt` is sent, exactly as before. Identical profile context still gives cache hits, and a different profile never does. If memory is deleted or disabled in a chat that already used it, the plain default is sent once to reset that chat's stored override.
+  - **Controls:** the brain pill in the top bar shows the status (name / No memory / Memory off) and opens a panel to view and edit the name, switch memory or Remember Me on and off, and **Delete memory**, which removes the storage key.
+  - **Scope:** memory lives in **this browser only**. It does not sync to other devices or browsers, and clearing site data removes it.
+  - **Why:** it's the most-requested "it forgot me" fix, done without breaking session isolation or the API contract.
 - **Voice Mode (spoken conversation).** The waveform button in the composer opens a hands-free mode with an animated orb and a live waveform driven by the real microphone level.
   - **How a turn works:** you speak and see a live transcript. After about 1.3 s of silence the turn is sent through the **same `POST /chat` request path** as typed messages, so session memory, the system prompt and the cache all apply. The reply is read aloud with the browser's speech synthesis, then it listens again.
   - **Controls:** mute, interrupt (Space) and end call (Esc).
@@ -410,6 +451,7 @@ The interface is deliberately minimal and chat-first, in the style of ChatGPT/Ge
   - **Limits:** it uses the Web Speech API, so it needs Chrome, Edge or Safari. Interrupting stops the spoken answer, but a request that already reached the server still completes and is stored.
 - **Failover demo from the browser, with no extra UI.** Open the frontend with `?simulate=key_1=429` (URL-encoded: `?simulate=key_1%3D429`), or `?simulate=*%3D429`. Every message then carries that `X-Simulate-Failure` header, a small removable chip shows it is active, and the reply metadata shows `key_2` with a highlighted fallback count, or the readable 503 error.
 - **Key and fallback in the metadata line.** Next to the required source, model, latency and token counts, each reply shows the key that answered, and the fallback count when a failover happened.
+- **Committed browser and unit tests.** Playwright end-to-end tests for the UI contract and memory flows, plus Vitest unit tests for the memory logic (see section 4).
 - **Chats within the tab.** "New chat" starts another session without reloading, and each chat's ⋯ menu copies its session id or opens `GET /sessions/{id}/messages`. A reload still starts a fresh session, as required.
 - **Connection line from `/health`.** The bottom of the sidebar shows connected, degraded or offline, plus the key count and cache state, so configuration problems are visible at a glance.
 - **Retry on errors.** A failed message is marked "Not delivered" and gets a Retry button.

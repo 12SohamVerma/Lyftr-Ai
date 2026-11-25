@@ -59,6 +59,9 @@ class HealthResponse(BaseModel):
     cache_enabled: bool
     # Extra field (allowed by the contract): lets the UI show the active model up front.
     model: str | None = None
+    # Extra field: lets the frontend append saved profile memory to the real default
+    # prompt instead of a hard-coded copy (the prompt is generic, not a secret).
+    default_system_prompt: str | None = None
     detail: str | None = None
 
 

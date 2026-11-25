@@ -116,3 +116,23 @@ def test_disk_cache_survives_restart(make_client, tmp_path):
     assert cached["metadata"]["resolution_source"] == "LLM_CACHE"
     assert cached["reply"] == live["reply"]
     assert any(p.is_file() for p in (tmp_path / "disk-cache").iterdir())
+
+
+def test_identical_profile_context_is_a_cache_hit_across_sessions(client, provider):
+    profile = "You are a test assistant.\n\nSaved user profile (stated explicitly by the user).\n- Name: Soham"
+    live = chat(client, "pc-a", "Say hi to me", system_prompt=profile).json()
+    cached = chat(client, "pc-b", "Say hi to me", system_prompt=profile).json()
+    assert live["metadata"]["resolution_source"] == "LIVE_INFERENCE"
+    assert cached["metadata"]["resolution_source"] == "LLM_CACHE"
+    assert cached["reply"] == live["reply"]
+    assert len(provider.provider_calls) == 1
+
+
+def test_different_profile_context_never_comes_from_cache(client, provider):
+    base = "You are a test assistant.\n\nSaved user profile (stated explicitly by the user).\n- Name: "
+    chat(client, "pd-a", "Say hi to me", system_prompt=base + "Soham")
+    other = chat(client, "pd-b", "Say hi to me", system_prompt=base + "Aniket").json()
+    no_profile = chat(client, "pd-c", "Say hi to me").json()
+    assert other["metadata"]["resolution_source"] == "LIVE_INFERENCE"
+    assert no_profile["metadata"]["resolution_source"] == "LIVE_INFERENCE"
+    assert len(provider.provider_calls) == 3

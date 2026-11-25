@@ -91,3 +91,35 @@ def test_timestamps_are_iso8601(client, tmp_path):
     assert len(stamps) == 2
     for s in stamps:
         assert datetime.fromisoformat(s).tzinfo is not None
+
+
+# --- profile memory (frontend feature) travels only inside system_prompt -------------
+
+PROFILE_PROMPT = (
+    "You are a test assistant.\n\nSaved user profile (stated explicitly by the user and stored only in their browser). "
+    "Use it naturally when relevant; you do not remember anything else from other chats.\n- Name: Soham"
+)
+
+
+def test_profile_context_in_system_prompt_reaches_model_and_is_not_returned(client, provider):
+    res = chat(client, "pm-1", "What is my name?", system_prompt=PROFILE_PROMPT)
+    assert res.status_code == 200
+    assert provider.provider_calls[-1]["messages"][0] == {"role": "system", "content": PROFILE_PROMPT}
+    history = client.get("/sessions/pm-1/messages")
+    assert "Name: Soham" not in history.text  # system context never leaks into history
+
+
+def test_profile_memory_does_not_merge_session_histories(client, provider):
+    chat(client, "pm-a", "Secret word is banana.", system_prompt=PROFILE_PROMPT)
+    chat(client, "pm-b", "What is the secret word?", system_prompt=PROFILE_PROMPT)
+    sent_b = provider.provider_calls[-1]["messages"]
+    assert [m["role"] for m in sent_b] == ["system", "user"]  # only B's own (empty) history
+    assert all("banana" not in m["content"] for m in sent_b)
+
+
+def test_explicit_default_prompt_resets_a_stored_override(client, provider):
+    # Memory deleted mid-chat: the frontend sends the plain default once to reset the override.
+    chat(client, "pm-r", "Hi", system_prompt=PROFILE_PROMPT)
+    chat(client, "pm-r", "Again", system_prompt=DEFAULT_PROMPT)
+    chat(client, "pm-r", "And again")  # no system_prompt -> stored (reset) override applies
+    assert provider.provider_calls[-1]["messages"][0] == {"role": "system", "content": DEFAULT_PROMPT}

@@ -17,6 +17,10 @@ node_modules/
 dist/
 *.local
 
+# Playwright output
+test-results/
+playwright-report/
+
 # Local data (SQLite DB, LiteLLM disk cache)
 data/
 *.db

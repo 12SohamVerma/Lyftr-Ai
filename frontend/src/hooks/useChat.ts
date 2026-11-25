@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, sendChatMessage } from "../services/chatApi";
 import type { AskResult, ChatSession, UIMessage } from "../types/chat";
+import { FALLBACK_DEFAULT_SYSTEM_PROMPT, systemPromptForRequest } from "../utils/profileMemory";
 
 /** RFC 4122 v4 id. crypto.randomUUID needs a secure context, so fall back to getRandomValues. */
 export function createId(): string {
@@ -16,7 +17,7 @@ export function createId(): string {
 }
 
 function newSession(): ChatSession {
-  return { id: createId(), title: "New chat", messages: [], systemPrompt: "", createdAt: Date.now() };
+  return { id: createId(), title: "New chat", messages: [], systemPrompt: "", hasServerOverride: false, createdAt: Date.now() };
 }
 
 function titleFrom(text: string): string {
@@ -41,7 +42,20 @@ function simulationFromUrl(): string {
  * generated on every page load (by design — nothing is restored from storage).
  * Only the new message is sent; the backend keeps the history in SQLite.
  */
-export function useChat() {
+/** What the request builder needs to know about personalisation at send time. */
+export interface PromptContext {
+  /** The backend's DEFAULT_SYSTEM_PROMPT (from /health), used as the base when memory is added. */
+  defaultPrompt: string;
+  /** Saved profile name, or null when memory is off/empty. */
+  profileName: string | null;
+}
+
+export function useChat(getPromptContext?: () => PromptContext) {
+  const contextRef = useRef(getPromptContext);
+  useEffect(() => {
+    contextRef.current = getPromptContext;
+  }, [getPromptContext]);
+
   const [state, setState] = useState(() => {
     const first = newSession();
     return { sessions: [first], activeId: first.id };
@@ -74,14 +88,26 @@ export function useChat() {
       }));
       setPendingSessionId(session.id);
 
-      const systemPrompt = session.systemPrompt.trim();
+      // custom session prompt + saved profile memory, never overwriting either (see utils/profileMemory.ts)
+      const ctx = contextRef.current?.() ?? { defaultPrompt: FALLBACK_DEFAULT_SYSTEM_PROMPT, profileName: null };
+      const systemPrompt = systemPromptForRequest({
+        custom: session.systemPrompt,
+        defaultPrompt: ctx.defaultPrompt,
+        profileName: ctx.profileName,
+        sessionHasOverride: session.hasServerOverride,
+      });
       return sendChatMessage(
         { session_id: session.id, message, ...(systemPrompt ? { system_prompt: systemPrompt } : {}) },
         { simulateFailure: simulated },
       )
         .then((res) => {
           const reply: UIMessage = { id: createId(), role: "assistant", content: res.reply, metadata: res.metadata, createdAt: Date.now() };
-          updateSession(session.id, (s) => ({ ...s, messages: [...s.messages, reply] }));
+          // The backend stores a sent system_prompt as this session's override (only on success).
+          updateSession(session.id, (s) => ({
+            ...s,
+            hasServerOverride: s.hasServerOverride || systemPrompt !== undefined,
+            messages: [...s.messages, reply],
+          }));
           return { ok: true, message: reply } as const;
         })
         .catch((err: unknown) => {

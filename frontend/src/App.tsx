@@ -1,19 +1,51 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChatInput } from "./components/ChatInput";
 import { ChatWindow } from "./components/ChatWindow";
+import { MemoryControls } from "./components/MemoryControls";
+import { MemoryOffer, MemoryToastView } from "./components/MemoryNotices";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { VoiceMode } from "./components/VoiceMode";
 import { useChat } from "./hooks/useChat";
 import { useHealth } from "./hooks/useHealth";
+import { useProfileMemory } from "./hooks/useProfileMemory";
 import { useTheme } from "./hooks/useTheme";
 import { useVoiceMode } from "./hooks/useVoiceMode";
+import { FALLBACK_DEFAULT_SYSTEM_PROMPT, activeProfileName } from "./utils/profileMemory";
 
 export default function App() {
-  const chat = useChat();
   const health = useHealth();
   const theme = useTheme();
-  const voice = useVoiceMode(chat.ask);
+  const profile = useProfileMemory();
+  const { memory, observeUserMessage } = profile;
+
+  // Personalisation for each request: the backend's real default prompt (from /health)
+  // plus the saved name, if memory is on. Session histories stay separate.
+  const defaultPrompt = health.health?.default_system_prompt ?? FALLBACK_DEFAULT_SYSTEM_PROMPT;
+  const profileName = activeProfileName(memory);
+  const getPromptContext = useCallback(() => ({ defaultPrompt, profileName }), [defaultPrompt, profileName]);
+  const chat = useChat(getPromptContext);
+
+  // Every message the user sends (typed or spoken) is checked for an explicit
+  // introduction ("My name is …") -> offer to save, or auto-save with Remember Me.
+  const { sendMessage, ask } = chat;
+  const sendWithMemory = useCallback(
+    (text: string) => {
+      const sent = sendMessage(text);
+      if (sent) observeUserMessage(text);
+      return sent;
+    },
+    [sendMessage, observeUserMessage],
+  );
+  const askWithMemory = useCallback(
+    (text: string) => {
+      const pending = ask(text);
+      if (pending) observeUserMessage(text);
+      return pending;
+    },
+    [ask, observeUserMessage],
+  );
+  const voice = useVoiceMode(askWithMemory);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { activeSession, newChat } = chat;
 
@@ -51,17 +83,22 @@ export default function App() {
   }, [newChat]);
 
   const composer = (
-    <ChatInput
-      onSend={chat.sendMessage}
-      busy={chat.isSending}
-      focusKey={activeSession.id}
-      systemPrompt={activeSession.systemPrompt}
-      onSystemPromptChange={chat.setSystemPrompt}
-      simulateFailure={chat.simulateFailure}
-      onClearSimulation={chat.clearSimulation}
-      voiceModeSupported={voice.supported}
-      onVoiceMode={voice.open}
-    />
+    <>
+      {profile.offer && (
+        <MemoryOffer name={profile.offer} onSave={() => profile.saveName(profile.offer ?? "", "offer")} onDismiss={profile.dismissOffer} />
+      )}
+      <ChatInput
+        onSend={sendWithMemory}
+        busy={chat.isSending}
+        focusKey={activeSession.id}
+        systemPrompt={activeSession.systemPrompt}
+        onSystemPromptChange={chat.setSystemPrompt}
+        simulateFailure={chat.simulateFailure}
+        onClearSimulation={chat.clearSimulation}
+        voiceModeSupported={voice.supported}
+        onVoiceMode={voice.open}
+      />
+    </>
   );
 
   return (
@@ -81,7 +118,22 @@ export default function App() {
 
       {/* data-session-id: the current session (a new one on every page load). */}
       <main className="flex min-w-0 flex-1 flex-col" data-session-id={activeSession.id}>
-        <TopBar model={model} dark={theme.dark} onToggleTheme={theme.toggle} onOpenSidebar={() => setSidebarOpen(true)} onNewChat={chat.newChat} />
+        <TopBar
+          model={model}
+          dark={theme.dark}
+          onToggleTheme={theme.toggle}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onNewChat={chat.newChat}
+          memorySlot={
+            <MemoryControls
+              memory={memory}
+              onSaveName={(name) => profile.saveName(name, "edit")}
+              onEnabledChange={profile.setEnabled}
+              onAutoSaveChange={profile.setAutoSave}
+              onForget={profile.forget}
+            />
+          }
+        />
 
         {empty ? (
           <div className="flex flex-1 flex-col items-center justify-center px-4 pb-[12vh]">
@@ -113,6 +165,7 @@ export default function App() {
       </main>
 
       <VoiceMode voice={voice} />
+      {profile.toast && <MemoryToastView toast={profile.toast} onDismiss={profile.dismissToast} />}
     </div>
   );
 }

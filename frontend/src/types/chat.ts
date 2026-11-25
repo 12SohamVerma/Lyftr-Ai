@@ -30,6 +30,8 @@ export interface HealthResponse {
   cache_enabled: boolean;
   /** Extra field: the LiteLLM model the backend is configured with. */
   model?: string;
+  /** Extra field: the backend's DEFAULT_SYSTEM_PROMPT (base for profile memory). */
+  default_system_prompt?: string;
   detail?: string;
 }
 
@@ -60,6 +62,8 @@ export interface ChatSession {
   title: string;
   messages: UIMessage[];
   systemPrompt: string;
+  /** True once a system_prompt was sent and stored by the backend for this session. */
+  hasServerOverride: boolean;
   createdAt: number;
 }
 

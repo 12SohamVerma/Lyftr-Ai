@@ -1,6 +1,12 @@
 import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useRef } from "react";
 
+/**
+ * The backend accepts up to 8000 characters; ~400 are reserved for the saved
+ * profile-memory block that may be appended to this prompt.
+ */
+export const SYSTEM_PROMPT_MAX = 7600;
+
 interface Props {
   value: string;
   onChange: (value: string) => void;
@@ -30,7 +36,7 @@ export function SystemPromptEditor({ value, onChange }: Props) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={1}
-        maxLength={8000}
+        maxLength={SYSTEM_PROMPT_MAX}
         aria-label="System prompt (optional)"
         placeholder="System prompt (optional)"
         className="scroll-thin block min-h-6 w-full resize-none bg-transparent text-[13px] leading-6 text-muted outline-none placeholder:text-faint focus:text-ink focus-visible:outline-none"
