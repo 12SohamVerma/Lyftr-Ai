@@ -1,0 +1,15 @@
+# Runtime dependencies (pinned). Installed into the production image.
+fastapi==0.162.2
+uvicorn[standard]==0.54.0
+pydantic==2.14.3
+pydantic-settings==2.16.2
+litellm==1.108.5
+# Backend for LiteLLM's built-in disk cache (CACHE_TYPE=disk).
+diskcache==5.6.3
+# LiteLLM 1.108.x imports a few modules from its proxy package while it replays a
+# cached completion (caching_handler._should_defer_streaming_cache_hit_callbacks).
+# Those modules need orjson and soundfile, which are otherwise only installed with
+# the heavy `litellm[proxy]` extra. Without them every cache hit raises an
+# ImportError internally and LiteLLM silently falls back to a live call.
+orjson==3.13.0
+soundfile==0.14.0

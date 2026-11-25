@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+/* Class-based dark mode (toggled on <html>, initialised in index.html). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe7ff;
+  --color-brand-400: #6aa1ff;
+  --color-brand-500: #4f8cff;
+  --color-brand-600: #3a6ff0;
+  --color-brand-700: #2f58c4;
+  --color-accent-400: #22d3ee;
+
+  --color-ink-950: #080c18;
+  --color-ink-900: #0d1324;
+  --color-ink-850: #111a30;
+  --color-ink-800: #172140;
+  --color-ink-700: #22305a;
+  --color-ink-600: #33437a;
+
+  --animate-fade-in: fade-in 220ms ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased dark:bg-ink-950 dark:text-slate-100;
+  font-family: var(--font-sans);
+}
+
+.typing-dot {
+  animation: typing 1.2s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* Thin, theme-aware scrollbars */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.4) transparent;
+}
+
+/* Rendered assistant Markdown */
+.markdown {
+  @apply text-[15px] leading-7 break-words;
+}
+.markdown > * + * {
+  @apply mt-3;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  @apply font-semibold tracking-tight;
+}
+.markdown h1 {
+  @apply text-xl;
+}
+.markdown h2 {
+  @apply text-lg;
+}
+.markdown h3 {
+  @apply text-base;
+}
+.markdown ul {
+  @apply list-disc pl-5;
+}
+.markdown ol {
+  @apply list-decimal pl-5;
+}
+.markdown li + li {
+  @apply mt-1;
+}
+.markdown a {
+  @apply text-brand-600 underline underline-offset-2 dark:text-brand-400;
+}
+.markdown strong {
+  @apply font-semibold;
+}
+.markdown blockquote {
+  @apply border-l-2 border-slate-300 pl-3 text-slate-600 dark:border-ink-600 dark:text-slate-300;
+}
+.markdown :not(pre) > code {
+  @apply rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[13px] dark:bg-ink-800;
+}
+.markdown pre {
+  @apply overflow-x-auto rounded-xl bg-ink-900 p-4 font-mono text-[13px] leading-6 text-slate-100 dark:bg-ink-950;
+}
+.markdown table {
+  @apply block w-full overflow-x-auto border-collapse text-sm;
+}
+.markdown th,
+.markdown td {
+  @apply border border-slate-200 px-3 py-1.5 text-left dark:border-ink-700;
+}
+.markdown th {
+  @apply bg-slate-50 font-semibold dark:bg-ink-800;
+}
+.markdown hr {
+  @apply border-slate-200 dark:border-ink-700;
+}

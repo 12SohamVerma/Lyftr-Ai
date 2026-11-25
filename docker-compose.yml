@@ -1,0 +1,38 @@
+name: lyftr-ai
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: lyftr-ai-backend:latest
+    # Secrets and settings come from .env (copy .env.example). Missing .env still
+    # starts the stack; /health then reports the incomplete key pool.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Container paths are fixed: the SQLite file and the LiteLLM disk cache
+      # both live on the named volume mounted at /data.
+      DATABASE_URL: sqlite:////data/app.db
+      CACHE_DIR: /data/litellm-cache
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - sqlite_data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    image: lyftr-ai-frontend:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:
